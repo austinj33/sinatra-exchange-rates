@@ -19,7 +19,7 @@ before do
     parsed_data = JSON.parse(response.to_s)
 
     # Accessing the currencies data
-    currencies = parsed_data.fetch("rates", {}) # It's usually 'rates', not 'currencies'
+    currencies = parsed_data.fetch("currencies", {}) # It's usually 'rates', not 'currencies'
 
     # Update the tickers array with the new data
     tickers.replace(currencies.keys)
@@ -28,6 +28,8 @@ end
 
 # Route to display the main page with all currencies
 get "/" do
+  <h1> "Currency Pairs" </h1>
+  
   list_items = tickers.map { |ticker| "<li><a href=\"/#{ticker}\">Convert 1 #{ticker} to...</a></li>" }.join
   "<ul>#{list_items}</ul>"
 end
@@ -40,4 +42,3 @@ tickers.each do |ticker1|
     "<ul>#{list_items}</ul>"
   end
 end
-
