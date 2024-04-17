@@ -3,42 +3,63 @@ require "sinatra/reloader" if development?
 require "http"
 require "json"
 
-# Assume 'tickers' is global for the sake of simplicity. In production, you would want to avoid this.
-tickers = []
+configure do
+  set :tickers, []
+end
 
-# Fetches the tickers once when the server starts
+def update_tickers
+  access_key = ENV.fetch("EXCHANGE_RATE_KEY", 'your_default_access_key')
+  exchange_rate_url = "https://api.exchangerate.host/list?access_key=#{access_key}"
+
+  response = HTTP.get(exchange_rate_url)
+  raise "Failed to fetch data" unless response.status.success?
+
+  parsed_data = JSON.parse(response.to_s)
+
+  if parsed_data["success"]
+    currencies = parsed_data["currencies"]
+    settings.tickers.replace(currencies.keys)
+  else
+    puts "API Error: #{parsed_data["error"]["info"] if parsed_data["error"]}"
+  end
+end
+
 before do
-  if tickers.empty?
-    access_key = ENV.fetch("EXCHANGE_RATE_KEY")
-    exchange_rate_url = "https://api.exchangerate.host/latest?access_key=#{access_key}"
-
-    response = HTTP.get(exchange_rate_url)
-    raise "Failed to fetch data" unless response.status.success?
-
-    # Parsing the JSON response
-    parsed_data = JSON.parse(response.to_s)
-
-    # Accessing the currencies data
-    currencies = parsed_data.fetch("currencies", {}) # It's usually 'rates', not 'currencies'
-
-    # Update the tickers array with the new data
-    tickers.replace(currencies.keys)
-  end
+  update_tickers if settings.tickers.empty?
 end
 
-# Route to display the main page with all currencies
 get "/" do
-  <h1> "Currency Pairs" </h1>
-  
-  list_items = tickers.map { |ticker| "<li><a href=\"/#{ticker}\">Convert 1 #{ticker} to...</a></li>" }.join
-  "<ul>#{list_items}</ul>"
+  @list_items = settings.tickers.map { |ticker|
+    "<li><a href=\"/#{ticker}\">Convert 1 #{ticker} to...</a></li>"
+  }
+  erb :home_page
 end
 
-# Generate dynamic routes for each ticker
-tickers.each do |ticker1|
-  get "/#{ticker1}" do
-    other_tickers = tickers.reject { |t| t == ticker1 }
-    list_items = other_tickers.map { |ticker2| "<li>Convert 1 #{ticker1} to #{ticker2}</li>" }.join
-    "<ul>#{list_items}</ul>"
+get "/:ticker" do
+  @ticker = params[:ticker]
+  @other_tickers = settings.tickers.reject { |t| t == @ticker }
+  @conversion_list = @other_tickers.map { |other_ticker|
+    "<li><a href=\"/#{@ticker}/#{other_ticker}\">Convert 1 #{@ticker} to #{other_ticker}...</a></li>"
+  }
+  erb :currency_page
+end
+
+get "/:ticker1/:ticker2" do
+  @ticker1 = params[:ticker1]
+  @ticker2 = params[:ticker2]
+  access_key = ENV.fetch("EXCHANGE_RATE_KEY", 'your_default_access_key')
+  amount = 1  # Hard-code the amount to 1
+  quote_url = "https://api.exchangerate.host/convert?access_key=#{access_key}&from=#{@ticker1}&to=#{@ticker2}&amount=#{amount}"
+
+  response = HTTP.get(quote_url)
+  parsed_data = JSON.parse(response.to_s)
+
+  if parsed_data["success"]
+    @result = parsed_data["result"]
+    @quote_message = "1 #{@ticker1} equals #{@result} #{@ticker2}."
+  else
+    @quote_message = "No quote available for #{@ticker1} to #{@ticker2}."
   end
+
+  erb :quote_page
 end
